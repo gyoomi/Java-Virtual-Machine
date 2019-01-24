@@ -21,7 +21,13 @@ public class JavaVMStackSOF {
         stackLeak();
     }
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
         JavaVMStackSOF oom = new JavaVMStackSOF();
+        try {
+            oom.stackLeak();
+        } catch (Exception e) {
+            System.out.println("stackLength = " + oom.stackLength);
+            throw e;
+        }
     }
 }

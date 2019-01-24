@@ -83,7 +83,68 @@ Object obj = new Object();
    1）如果线程请求的栈的深度大于虚拟机的所允许最大的深度，则抛出StackOverflowError  
    2）如果虚拟机在拓展栈时无法申请到足够的内存空间，则会抛出OutOfMemoryError  
    这二者在一定程度上对一种情况的两种描述，当栈无法分配到内存到底是内存大小不足还是已使用的栈空间太大
-3. 
+3. 实验证明：在单个线程下，无论是由于栈帧太大还是虚拟机容量太小。当虚拟机无法分配内存时，虚拟机抛出的都是StackOverflowError
+   ```
+       private int stackLength = 1;
+
+       public void stackLeak() {
+           stackLength++;
+           stackLeak();
+       }
+
+       public static void main(String[] args) throws Exception {
+           JavaVMStackSOF oom = new JavaVMStackSOF();
+           try {
+               oom.stackLeak();
+           } catch (Exception e) {
+               System.out.println("stackLength = " + oom.stackLength);
+               throw e;
+           }
+       }
+   ```
+
+4. 创建线程导致的内存溢出异常
+5. 通过减少最大堆容量和减少栈容量的来换取更多的线程。这种通过“减少内存”来解决内存溢出方式并不常见。
+#### 2.4.3 运行时常量池溢出
+1. 常量池分配在方法区：可以通过-XX:PermSize、-XX:MaxPermSize限制方法区的大小，从而间接其中常量池的大小
+2. jdk6会报OOM,jdk7则会一直循环下去
+   ```
+        public static void main(String[] args) {
+            List<String> list = new ArrayList<>();
+            int i = 0;
+            while (true) {
+                list.add(String.valueOf(i++).intern());
+            }
+        }
+   ```
+3. 1.6的永久代intern()则是首次遇到的字符串复制到永久代中去，而StringBuilder创建的则反映的Java堆中；
+   1.7的intern()只是记录第一次出现的实例的引用。首次出现为true，否则就是false
+#### 2.4.4 方法区溢出
+1. 方法区用于存储：Class相关的信息（类名、访问修饰符、常量池、字段描述、字段描述、方法描述）
+2. 方法区溢出也是一种常见的内存溢出异常。一个类要被垃圾回收器回收判定条件比较苛刻。
+3. 模拟方法区溢出：使用cglib或者jdk的动态代理生成大量的代理，来模拟内存溢出的情况。
+4. Spring、MyBatis等框架大量使用代理类，这代表在实际的项目中很容易出现类似的问题。
+5. 代码实现：
+   ```
+    public static void main(final String[] args) {
+        while (true) {
+            Enhancer enhancer = new Enhancer();
+            enhancer.setSuperclass(OOMObject.class);
+            enhancer.setUseCache(false);
+            enhancer.setCallback(new MethodInterceptor() {
+                public Object intercept(Object o, Method method, Object[] objects, MethodProxy methodProxy) throws Throwable {
+                    return methodProxy.invoke(o, args);
+                }
+            });
+            enhancer.create();
+        }
+    }
+
+    static class OOMObject {}
+   ```
+#### 2.4.5 本机内存直接溢出
+1. DirectMemory容量可以通过-XX:MaxDirectMemorySize指定。如果不指定，默认和java堆最大值大小（-Xms）一致
+2. 通过反射越过DirectByteBuffer类，直接通过反射Unsafe实例进行内存获取和分配
 
 
 
