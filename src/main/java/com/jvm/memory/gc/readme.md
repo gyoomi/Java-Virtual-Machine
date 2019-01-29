@@ -290,8 +290,193 @@ Java自动内存管理主要解决了两个问题：
 4. 示例
 
    ```
-   
+   /**
+    * VM args：-verbose:gc -Xms20M -Xmn10M -XX:SurvivorRatio=8 -XX:+PrintGCDetails
+    *          -XX:PretenureSizeThreshold=3M -XX:+UseSerialGC
+    * @author Leon
+    * @version 2019/1/29 11:47
+    */
+   public class TestPretenureThreshold {
+
+       private static final int _1MB = 1024 * 1024;
+
+       public static void main(String[] args) throws Exception {
+           byte[] allocation;
+           allocation = new byte[4 * _1MB];
+           // 直接分配在老年代
+       }
+   }
    ```
+
+   运行结果
+
+   ```
+   Heap
+    def new generation   total 9216K, used 1987K [0x00000006c1400000, 0x00000006c1e00000, 0x00000006c1e00000)
+     eden space 8192K,  24% used [0x00000006c1400000, 0x00000006c15f0e60, 0x00000006c1c00000)
+     from space 1024K,   0% used [0x00000006c1c00000, 0x00000006c1c00000, 0x00000006c1d00000)
+     to   space 1024K,   0% used [0x00000006c1d00000, 0x00000006c1d00000, 0x00000006c1e00000)
+    tenured generation   total 10240K, used 4096K [0x00000006c1e00000, 0x00000006c2800000, 0x00000007c0000000)
+      the space 10240K,  40% used [0x00000006c1e00000, 0x00000006c2200010, 0x00000006c2200200, 0x00000006c2800000)
+    Metaspace       used 3148K, capacity 4496K, committed 4864K, reserved 1056768K
+     class space    used 341K, capacity 388K, committed 512K, reserved 1048576K
+   ```
+#### 3.6.3 长期存活的对象将进入老年代
+1. 每个对象定义一个年龄（Age）计数器
+2. 对象在Survivor区域每熬过一次MinorGC，年龄就会增加。默认年龄为15。当年龄超过一定的阈值就会进入老年代。
+   通过参数：-XX:MaxTenuringThreshold设置
+3. 实例（-XX:MaxTenuringThreshold=1或15来进行测试）
+
+   代码
+
+   ```
+   /**
+    * VM args：-verbose:gc -Xms20M -Xmn10M -XX:SurvivorRatio=8 -XX:+PrintGCDetails
+    *          -XX:MaxTenuringThreshold=1 -XX:+UseSerialGC
+    * @author Leon
+    * @version 2019/1/29 11:47
+    */
+   public class TestTenuringThreshold {
+
+       private final static int _1MB = 1024 * 1024;
+
+       public static void main(String[] args) {
+           byte[] allcation1, allcation2, allcation3;
+           // 什么时候进入老年代取决于MaxTenuringThreshold的值
+           allcation1 = new byte[_1MB / 4];
+           allcation2 = new byte[4 * _1MB];
+           allcation3 = new byte[4 * _1MB];
+           allcation3 = null;
+           allcation3 = new byte[4 * _1MB];
+
+       }
+   }
+   ```
+
+   结果
+
+   ```
+   [GC (Allocation Failure) [DefNew: 6175K->885K(9216K), 0.0031569 secs] 6175K->4981K(19456K), 0.0031954 secs] [Times: user=0.00 sys=0.00, real=0.00 secs]
+   [GC (Allocation Failure) [DefNew: 5065K->0K(9216K), 0.0010477 secs] 9161K->4975K(19456K), 0.0010657 secs] [Times: user=0.00 sys=0.00, real=0.00 secs]
+   Heap
+    def new generation   total 9216K, used 4316K [0x00000006c1400000, 0x00000006c1e00000, 0x00000006c1e00000)
+     eden space 8192K,  52% used [0x00000006c1400000, 0x00000006c1837000, 0x00000006c1c00000)
+     from space 1024K,   0% used [0x00000006c1c00000, 0x00000006c1c003b0, 0x00000006c1d00000)
+     to   space 1024K,   0% used [0x00000006c1d00000, 0x00000006c1d00000, 0x00000006c1e00000)
+    tenured generation   total 10240K, used 4974K [0x00000006c1e00000, 0x00000006c2800000, 0x00000007c0000000)
+      the space 10240K,  48% used [0x00000006c1e00000, 0x00000006c22db9f8, 0x00000006c22dba00, 0x00000006c2800000)
+    Metaspace       used 3184K, capacity 4496K, committed 4864K, reserved 1056768K
+     class space    used 344K, capacity 388K, committed 512K, reserved 1048576K
+   ```
+
+   说明：
+   - 当MaxTenuringThreshold=1的情况
+
+     分配a3=4M时，Eden无法容纳4M的对象了，发起Minor GC，此时a1，a2 age=1，
+
+     这个时候，Survivor最大容量1M，无法同时容纳存活的4.5M a1，a2
+
+     虚拟机将4M的a2放入老年代，同时将0.25M的a1放入Survivor to中，此时空间分布Eden(0M)，Survivor from(0.25M),Old（4M）
+
+     放入4M的a3，此时空间分布Eden(4M)，Survivor from(0.25M),Old（4M）
+
+     此时空间分布Eden(4MB)  Survivor From(0.25MB) Survivor to(0) Old(4MB)  "因为4MB大于阈值，直接进入老年代"
+
+     但是接下来：allcation3=null表明allcation3引用无效，在下次GC可以回收掉，但是其数组空间还是存在的
+
+     接下来allcation3 = 4MB;这时Eden=4+4=8已经满了，再一次触发GC.(jvm这时会清理age=1的对象，a1, a2被放在老年代)
+
+     发现之前创建的4M数组没有GC Root相关联，而且不符合自救规则，回收。
+
+     此时空间分布Eden(4M)，Survivor from(0M),Old（4.25M）
+   - MaxTenuringThreshold=15
+   ```
+   [GC (Allocation Failure) [DefNew: 6175K->887K(9216K), 0.0029357 secs] 6175K->4983K(19456K), 0.0029630 secs] [Times: user=0.02 sys=0.00, real=0.00 secs]
+   [GC (Allocation Failure) [DefNew: 5067K->0K(9216K), 0.0009721 secs] 9163K->4976K(19456K), 0.0009869 secs] [Times: user=0.00 sys=0.00, real=0.00 secs]
+   Heap
+    def new generation   total 9216K, used 4316K [0x00000006c1400000, 0x00000006c1e00000, 0x00000006c1e00000)
+     eden space 8192K,  52% used [0x00000006c1400000, 0x00000006c1837070, 0x00000006c1c00000)
+     from space 1024K,   0% used [0x00000006c1c00000, 0x00000006c1c00208, 0x00000006c1d00000)
+     to   space 1024K,   0% used [0x00000006c1d00000, 0x00000006c1d00000, 0x00000006c1e00000)
+    tenured generation   total 10240K, used 4976K [0x00000006c1e00000, 0x00000006c2800000, 0x00000007c0000000)
+      the space 10240K,  48% used [0x00000006c1e00000, 0x00000006c22dc050, 0x00000006c22dc200, 0x00000006c2800000)
+    Metaspace       used 3187K, capacity 4496K, committed 4864K, reserved 1056768K
+     class space    used 345K, capacity 388K, committed 512K, reserved 1048576K
+   ```
+
+
+     分配a3=4M时，Eden无法容纳4M的对象了，发起Minor GC，此时a1，a2 age=1，
+
+     这个时候，Survivor最大容量1M，无法同时容纳存活的4.5M a1，a2
+
+     虚拟机将4M的a2放入老年代，同时将0.25M的a1放入Survivor to中，此时空间分布Eden(0M)，Survivor from(0.25M),Old（4M）
+
+     放入4M的a3，此时空间分布Eden(4M)，Survivor from(0.25M),Old（4M）
+
+     此时空间分布Eden(4MB)  Survivor From(0.25MB) Survivor to(0) Old(4MB)  "因为4MB大于阈值，直接进入老年代"
+
+     但是接下来：allcation3=null表明allcation3引用无效，在下次GC可以回收掉，但是其数组空间还是存在的
+
+     接下来allcation3 = 4MB;这时Eden=4+4=8已经满了，再一次触发GC.(jvm这时会清理age大于15的对象，a1在survivor from, a2被放在老年代)
+
+     发现之前创建的4M数组没有GC Root相关联，而且不符合自救规则，回收。
+
+     此时空间分布Eden(4M)，Survivor from(0.25M),Old（4M）
+
+     但是jdk1.7执行的就是上述结果。jdk8及时设置了15，在第二次gc时一样会a1会进入老年代。
+#### 3.6.4 动态对象年龄判断
+1. 为了更好的适应不同的程序，虚拟机并不是永远要求对象年龄达到MaxTenuringThreshold才晋升到老年代。
+   如果在Survivor空间的相同年龄所有对象大小的总和大于Survivor空间的一半，年龄大于或等于该年龄的对象可以直接进入老年代，无需MaxTenuringThreshold要求的对象。
+2. 示例
+   ```
+   /**
+    * VM args：-verbose:gc -Xms20M -Xmn10M -XX:SurvivorRatio=8 -XX:+PrintGCDetails
+    *          -XX:MaxTenuringThreshold=1 -XX:+UseSerialGC
+    * @author Leon
+    * @version 2019/1/29 11:47
+    */
+   public class TestDynamicTenuringshold {
+
+       private final static int _1MB = 1024 * 1024;
+
+       public static void main(String[] args) {
+           byte[] allcation1, allcation2, allcation3, allcation4;
+           // 什么时候进入老年代取决于MaxTenuringThreshold的值
+           allcation1 = new byte[_1MB / 4];
+           allcation2 = new byte[_1MB / 4];
+           allcation3 = new byte[4 * _1MB];
+           allcation4 = new byte[4 * _1MB];
+           allcation4 = null;
+           allcation4 = new byte[4 * _1MB];
+
+       }
+   }
+   ```
+
+   日志
+
+   ```
+   [GC (Allocation Failure) [DefNew: 6431K->1024K(9216K), 0.0028471 secs] 6431K->5237K(19456K), 0.0028805 secs] [Times: user=0.00 sys=0.00, real=0.00 secs]
+   [GC (Allocation Failure) [DefNew: 5204K->0K(9216K), 0.0009744 secs] 9417K->5237K(19456K), 0.0009888 secs] [Times: user=0.00 sys=0.00, real=0.00 secs]
+   Heap
+    def new generation   total 9216K, used 4316K [0x00000006c1400000, 0x00000006c1e00000, 0x00000006c1e00000)
+     eden space 8192K,  52% used [0x00000006c1400000, 0x00000006c1836f30, 0x00000006c1c00000)
+     from space 1024K,   0% used [0x00000006c1c00000, 0x00000006c1c00320, 0x00000006c1d00000)
+     to   space 1024K,   0% used [0x00000006c1d00000, 0x00000006c1d00000, 0x00000006c1e00000)
+    tenured generation   total 10240K, used 5236K [0x00000006c1e00000, 0x00000006c2800000, 0x00000007c0000000)
+      the space 10240K,  51% used [0x00000006c1e00000, 0x00000006c231d3e0, 0x00000006c231d400, 0x00000006c2800000)
+    Metaspace       used 3184K, capacity 4496K, committed 4864K, reserved 1056768K
+     class space    used 344K, capacity 388K, committed 512K, reserved 1048576K
+   ```
+#### 3.6.5 空间分配担保
+1. 在发生MinorGC之前，虚拟机会先检查老年代最大可用的连续空间是否大于新生代的所有对象的总和。如果成立，
+   那么MinorGC则是安全的。如果不成立，则虚拟机会查看HandlePromotionFailure设置值是否允许担保失败。
+   如果允许，那么会继续检查老年代的最大连续可用空间是否大于历次晋升到老年代对象的平均大小，如果大于，将尝试
+   进行一次MinorGC,尽管这次MinorGC是有风险的；如果小于或者HandlePromotionFailure设置不允许冒险，那么这时就要改进成
+   一次Full GC
+2.
+
+
 
 
 

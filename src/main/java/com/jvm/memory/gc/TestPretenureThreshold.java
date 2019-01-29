@@ -8,7 +8,7 @@ package com.jvm.memory.gc;
 
 /**
  * VM args：-verbose:gc -Xms20M -Xmn10M -XX:SurvivorRatio=8 -XX:+PrintGCDetails
- *          -XX:PretenureSizeThreshold=3M -XX:+UserSerialGC
+ *          -XX:PretenureSizeThreshold=3M -XX:+UseSerialGC
  * @author Leon
  * @version 2019/1/29 11:47
  */
