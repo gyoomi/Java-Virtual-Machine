@@ -234,8 +234,64 @@
 Java自动内存管理主要解决了两个问题：
 - 给对象分配内存
 - 回收分配给对象的内存
+#### 3.6.1 对象优先在Eden分配
+1. 大多数情况下，对象在Eden区中分配。当Eden内存不足时，虚拟机将发起一次MinorGC
+2. 提供了-XX:+PrintGCDetails日志参数。告诉虚拟机发生垃圾回收时打印内存回收日志，并在线程结束后输出各内存的分配情况
+3. Minor GC和Full GC
+   1. 新生代GC(Minor GC)：回收频繁，且回收速度较快
+   2. 老年代GC(Major GC或Full GC)：经常至少伴随着一次Minor GC(并不是绝对，例如PS回收)；Major GC速度至少比Minor GC速度慢10倍以上
+4. 示例
 
+   代码
 
+   ```
+   /**
+    * VM args：-verbose:gc -Xms20M -Xmn10M -XX:SurvivorRatio=8 -XX:+PrintGCDetails
+    *
+    * @author Leon
+    * @version 2019/1/29 9:39
+    */
+   public class TestAllocation {
+   
+       private static final int _1MB = 1024 * 1024;
+   
+       public static void main(String[] args) {
+           byte[] allocation1, allocation2, allocation3, allocation4, allocation5;
+           allocation1 = new byte[2 * _1MB];
+           allocation2 = new byte[2 * _1MB];
+           allocation3 = new byte[2 * _1MB];
+           allocation3 = new byte[2 * _1MB];
+           allocation4 = new byte[2 * _1MB];
+           allocation5 = new byte[4 * _1MB];
+           // 至少发生了MinorGC
+       }
+   }
+   ```
+
+   GC日志
+
+   ```
+   [GC (Allocation Failure) [PSYoungGen: 8010K->792K(9216K)] 8010K->6944K(19456K), 0.0043645 secs] [Times: user=0.00 sys=0.00, real=0.00 secs] 
+   [Full GC (Ergonomics) [PSYoungGen: 792K->0K(9216K)] [ParOldGen: 6152K->6802K(26112K)] 6944K->6802K(35328K), [Metaspace: 3206K->3206K(1056768K)], 0.0056064 secs] [Times: user=0.05 sys=0.00, real=0.01 secs] 
+   Heap
+    PSYoungGen      total 9216K, used 4336K [0x00000000ff600000, 0x0000000100000000, 0x0000000100000000)
+     eden space 8192K, 52% used [0x00000000ff600000,0x00000000ffa3c2d8,0x00000000ffe00000)
+     from space 1024K, 0% used [0x00000000ffe00000,0x00000000ffe00000,0x00000000fff00000)
+     to   space 1024K, 0% used [0x00000000fff00000,0x00000000fff00000,0x0000000100000000)
+    ParOldGen       total 26112K, used 10898K [0x0000000084e00000, 0x0000000086780000, 0x00000000ff600000)
+     object space 26112K, 41% used [0x0000000084e00000,0x00000000858a4bd0,0x0000000086780000)
+    Metaspace       used 3212K, capacity 4496K, committed 4864K, reserved 1056768K
+     class space    used 349K, capacity 388K, committed 512K, reserved 1048576K
+   ```
+#### 3.6.2 大对象直接进入老年代
+1. 所谓大对象：需要大量连续内存空间的Java对象。典型的如很长的字符串或数组（上面例子中byte[]就是大对象）
+2. 大对象对虚拟机来说是坏事，尤其是那种朝生夕死的大对象。经常内存不足而导致不得不提前进行GC
+3. 虚拟机提供-XX:PretenureSizeThreshold参数，使大于此值的对象在老年代分配。好处是避免了在Eden区及两个Survivor区间发生大量的复制。新生代采用复制算法进行垃圾收集。
+4. 示例
+
+   ```
+   
+   ```
 
 
 
