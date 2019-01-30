@@ -3,7 +3,7 @@ package com.jvm.memory.gc;
 
 /**
  * VM args：-verbose:gc -Xms20M -Xmn10M -XX:SurvivorRatio=8 -XX:+PrintGCDetails
- *          -XX:MaxTenuringThreshold=1 -XX:+UseSerialGC
+ *          -XX:MaxTenuringThreshold=15 -XX:+UseSerialGC
  * @author Leon
  * @version 2019/1/29 11:47
  */

@@ -372,24 +372,17 @@ Java自动内存管理主要解决了两个问题：
    说明：
    - 当MaxTenuringThreshold=1的情况
 
-     分配a3=4M时，Eden无法容纳4M的对象了，发起Minor GC，此时a1，a2 age=1，
+     1)首先1,2都被分到Eden中，当3第一次来时，Eden不够4M了，所以进行一次GC，将1放入Survivor，Age+1。
+       又因为Survivor只有1M，不够4M，所以直接担保机制，2放入老年代。所以Eden从5726k->616k，总内存基本没变。
 
-     这个时候，Survivor最大容量1M，无法同时容纳存活的4.5M a1，a2
+     2)当第二次3进来时，发生第二次GC，将原来存在Eden中的3释放(赋值为null了),Survivor中的1已经1岁了，所以存入老年代，
+       这时Eden刚释放完3，下一个3还没有进来，所以Eden从4712k->0,总内存由8808k->4706k，GC过后将新的3存入Eden。
+       两次GC过后。Eden中存着的是3，老年代中存着的是2和1。此时空间分布Eden(4M)，Survivor from(0M),Old（4.25M）
 
-     虚拟机将4M的a2放入老年代，同时将0.25M的a1放入Survivor to中，此时空间分布Eden(0M)，Survivor from(0.25M),Old（4M）
+     3)如果将参数-XX:MaxTenuringThreshold值改为15，两次GC过后应该是Eden中存着3，Survivor中存着1，老年代中存着2。Eden(4M)，Survivor from(0.25M),Old（4M）。但是跑的结果如下。那是因为
+       虽然设置了MaxTenuringThreshold为15，但是虚拟机会动态计算这个值。最后2也被移到了老年代。原因见下一小节。
 
-     放入4M的a3，此时空间分布Eden(4M)，Survivor from(0.25M),Old（4M）
-
-     此时空间分布Eden(4MB)  Survivor From(0.25MB) Survivor to(0) Old(4MB)  "因为4MB大于阈值，直接进入老年代"
-
-     但是接下来：allcation3=null表明allcation3引用无效，在下次GC可以回收掉，但是其数组空间还是存在的
-
-     接下来allcation3 = 4MB;这时Eden=4+4=8已经满了，再一次触发GC.(jvm这时会清理age=1的对象，a1, a2被放在老年代)
-
-     发现之前创建的4M数组没有GC Root相关联，而且不符合自救规则，回收。
-
-     此时空间分布Eden(4M)，Survivor from(0M),Old（4.25M）
-   - MaxTenuringThreshold=15
+   - MaxTenuringThreshold=15的日志结果
    ```
    [GC (Allocation Failure) [DefNew: 6175K->887K(9216K), 0.0029357 secs] 6175K->4983K(19456K), 0.0029630 secs] [Times: user=0.02 sys=0.00, real=0.00 secs]
    [GC (Allocation Failure) [DefNew: 5067K->0K(9216K), 0.0009721 secs] 9163K->4976K(19456K), 0.0009869 secs] [Times: user=0.00 sys=0.00, real=0.00 secs]
@@ -403,27 +396,6 @@ Java自动内存管理主要解决了两个问题：
     Metaspace       used 3187K, capacity 4496K, committed 4864K, reserved 1056768K
      class space    used 345K, capacity 388K, committed 512K, reserved 1048576K
    ```
-
-
-     分配a3=4M时，Eden无法容纳4M的对象了，发起Minor GC，此时a1，a2 age=1，
-
-     这个时候，Survivor最大容量1M，无法同时容纳存活的4.5M a1，a2
-
-     虚拟机将4M的a2放入老年代，同时将0.25M的a1放入Survivor to中，此时空间分布Eden(0M)，Survivor from(0.25M),Old（4M）
-
-     放入4M的a3，此时空间分布Eden(4M)，Survivor from(0.25M),Old（4M）
-
-     此时空间分布Eden(4MB)  Survivor From(0.25MB) Survivor to(0) Old(4MB)  "因为4MB大于阈值，直接进入老年代"
-
-     但是接下来：allcation3=null表明allcation3引用无效，在下次GC可以回收掉，但是其数组空间还是存在的
-
-     接下来allcation3 = 4MB;这时Eden=4+4=8已经满了，再一次触发GC.(jvm这时会清理age大于15的对象，a1在survivor from, a2被放在老年代)
-
-     发现之前创建的4M数组没有GC Root相关联，而且不符合自救规则，回收。
-
-     此时空间分布Eden(4M)，Survivor from(0.25M),Old（4M）
-
-     但是jdk1.7执行的就是上述结果。jdk8及时设置了15，在第二次gc时一样会a1会进入老年代。
 #### 3.6.4 动态对象年龄判断
 1. 为了更好的适应不同的程序，虚拟机并不是永远要求对象年龄达到MaxTenuringThreshold才晋升到老年代。
    如果在Survivor空间的相同年龄所有对象大小的总和大于Survivor空间的一半，年龄大于或等于该年龄的对象可以直接进入老年代，无需MaxTenuringThreshold要求的对象。
@@ -474,8 +446,62 @@ Java自动内存管理主要解决了两个问题：
    如果允许，那么会继续检查老年代的最大连续可用空间是否大于历次晋升到老年代对象的平均大小，如果大于，将尝试
    进行一次MinorGC,尽管这次MinorGC是有风险的；如果小于或者HandlePromotionFailure设置不允许冒险，那么这时就要改进成
    一次Full GC
-2.
+2. 冒险的含义：
+   新生代采用复制算法，但是为了提高内存利用率，只使用其中一个Survivor空间作为轮换备份。因此当出现大量对象在MinorGC后仍然存活的情况（最极端的情况就是
+   就是所有的新生代的对象都存活了下来）这时就需要老年代来进行分配担保，把Survivor无法容纳的对象直接放入老年代。老年代要进行这样的担保，前提是老年代本身还有
+   容纳这些对象的剩余空间，一共有多少对象活下来在实际完成内存回收之前是无法确定知道的，所以只好之前每一次回收晋升到老年代对象容量的平均值大小作为经验值，与老年代剩余的空间
+   做对比，来决定是否进行Full GC来让老年代腾出更多的空间。
 
+   其实取平均值进行比较仍然是一种动态概率手段。也就是说某次Minor GC后存活的对象突增，远远高于平均值的话，依然会导致担保失败。如果担保失败的话，只好在失败后重新发起一次Full GC.
+3. 示例
+   ```
+   /**
+    * VM args：-verbose:gc -Xms20M -Xmn10M -XX:SurvivorRatio=8 -XX:+PrintGCDetails -XX:+UseSerialGC
+    *
+    * @author Leon
+    * @version 2019/1/30 10:47
+    */
+   public class TestHandlePromotion {
+   
+       private static final int _1MB = 1024 * 1024;
+   
+       public static void main(String[] args) throws Exception {
+           byte[] a1, a2, a3, a4, a5, a6, a7;
+           a1 = new byte[2 * _1MB];
+           a2 = new byte[2 * _1MB];
+           a3 = new byte[2 * _1MB];
+           a1 = null;
+           a4 = new byte[2 * _1MB];
+           a5 = new byte[2 * _1MB];
+           a6 = new byte[2 * _1MB];
+           a4 = null;
+           a5 = null;
+           a6 = null;
+           a7 = new byte[2 * _1MB];
+       }
+   }
+   ```
+
+   日志
+   ```
+   [GC (Allocation Failure) [DefNew: 8010K->659K(9216K), 0.0034787 secs] 8010K->4756K(19456K), 0.0035193 secs] [Times: user=0.00 sys=0.00, real=0.00 secs] 
+   [GC (Allocation Failure) [DefNew: 6962K->0K(9216K), 0.0009555 secs] 11058K->4748K(19456K), 0.0009757 secs] [Times: user=0.00 sys=0.00, real=0.00 secs] 
+   Heap
+    def new generation   total 9216K, used 2212K [0x0000000084e00000, 0x0000000085800000, 0x0000000085800000)
+     eden space 8192K,  27% used [0x0000000084e00000, 0x00000000850290e0, 0x0000000085600000)
+     from space 1024K,   0% used [0x0000000085600000, 0x0000000085600000, 0x0000000085700000)
+     to   space 1024K,   0% used [0x0000000085700000, 0x0000000085700000, 0x0000000085800000)
+    tenured generation   total 10240K, used 4748K [0x0000000085800000, 0x0000000086200000, 0x0000000100000000)
+      the space 10240K,  46% used [0x0000000085800000, 0x0000000085ca32f8, 0x0000000085ca3400, 0x0000000086200000)
+    Metaspace       used 3214K, capacity 4496K, committed 4864K, reserved 1056768K
+     class space    used 349K, capacity 388K, committed 512K, reserved 1048576K
+   ```
+
+   说明
+
+   1. 发生了两次GC，第一次发生在给allocation4分配内存空间时，由于老年代的连续可用空间大于存活的对象总和，所以allocation2、allocation3将会进入老年代，allocation1的空间将被回收，allocation4分配在新生代。
+   2. 第二次发生在给allocation7分配内存空间时，此次GC将allocation4、allocation5、allocation6所占的内存全部回收。最后，allocation2、allocation3在老年代，allocation7在新生代。
+4. JDK6 UPDATE之后HandlePromotionFailure参数无效。规则变成只要老年代连续内存空间大于新生代对象的总大小或者历次晋升平均值大小就会进行Full GC，否则就是Minor GC。
 
 
 
