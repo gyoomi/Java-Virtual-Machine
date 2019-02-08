@@ -501,7 +501,7 @@ Java自动内存管理主要解决了两个问题：
 
    1. 发生了两次GC，第一次发生在给allocation4分配内存空间时，由于老年代的连续可用空间大于存活的对象总和，所以allocation2、allocation3将会进入老年代，allocation1的空间将被回收，allocation4分配在新生代。
    2. 第二次发生在给allocation7分配内存空间时，此次GC将allocation4、allocation5、allocation6所占的内存全部回收。最后，allocation2、allocation3在老年代，allocation7在新生代。
-4. JDK6 UPDATE之后HandlePromotionFailure参数无效。规则变成只要老年代连续内存空间大于新生代对象的总大小或者历次晋升平均值大小就会进行Full GC，否则就是Minor GC。
+4. JDK6 UPDATE之后HandlePromotionFailure参数无效。规则变成只要老年代连续内存空间大于新生代对象的总大小或者历次晋升平均值大小就会进行Minor GC，否则就是Full GC。
 
 
 
