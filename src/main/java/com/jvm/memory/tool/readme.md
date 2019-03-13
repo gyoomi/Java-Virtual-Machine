@@ -79,7 +79,7 @@ Java和c++之间有一堵由内存动态分配和垃圾回收技术隔离的高�
    如果不使用jmap命令，要想获得Java堆转储快照，还有一些比较“暴力”的手段
 2. 暴力手段包括：
    1) 通过-XX:+HeapDumpOnOutOfMemoryError参数，可以让虚拟机在OOM异常出现之后自动生成dump文件；
-   2) 通过-XX:HeapDumpOnCtrlBreak参数则可以使用[Ctrl]+[Break]键让虚拟机生成dump文件；
+   j2) 通过-XX:HeapDumpOnCtrlBreak参数则可以使用[Ctrl]+[Break]键让虚拟机生成dump文件；
    3) 可在Linux系统下通过kill -3命令发送进程退出信号“吓唬”一下虚拟机，也能拿到dump文件
 3. jmap命令格式：jmap [option] vmid
 4. jmap的作用并不仅仅是为了获取dump文件，它还可以查询finalize执行队列、Java堆和永久代的详细信息，
