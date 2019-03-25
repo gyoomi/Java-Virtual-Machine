@@ -236,7 +236,7 @@ Java自动内存管理主要解决了两个问题：
 - 回收分配给对象的内存
 #### 3.6.1 对象优先在Eden分配
 1. 大多数情况下，对象在Eden区中分配。当Eden内存不足时，虚拟机将发起一次MinorGC
-2. 提供了-XX:+PrintGCDetails日志参数。告诉虚拟机发生垃圾回收时打印内存回收日志，并在线程结束后输出各内存的分配情况
+2. 0提供了-XX:+PrintGCDetails日志参数。告诉虚拟机发生垃圾回收时打印内存回收日志，并在线程结束后输出各内存的分配情况
 3. Minor GC和Full GC
    1. 新生代GC(Minor GC)：回收频繁，且回收速度较快
    2. 老年代GC(Major GC或Full GC)：经常至少伴随着一次Minor GC(并不是绝对，例如PS回收)；Major GC速度至少比Minor GC速度慢10倍以上
